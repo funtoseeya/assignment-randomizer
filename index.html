@@ -168,24 +168,24 @@ document.getElementById('hide-instructions').style.display='none';
     const shuffledRows = rows.sort(() => Math.random() - 0.5); // Shuffle rows randomly
     const filteredRows = [];
 
-    // Process each pair
+    // First pass: Assign up to 3 assignees per invitee and ensure assignees don't exceed 20 invitees
     shuffledRows.forEach(([invitee, assignee]) => {
         if (!inviteeCounter[invitee]) inviteeCounter[invitee] = 0;
         if (!assigneeCounter[assignee]) assigneeCounter[assignee] = 0;
 
-        // Allow a pair if invitee < 3 or assignee < 10 (temporary filtering)
-        if (inviteeCounter[invitee] < 3 || assigneeCounter[assignee] < 10) {
+        if (inviteeCounter[invitee] < 3 && assigneeCounter[assignee] < 20) {
             filteredRows.push([invitee, assignee]);
             inviteeCounter[invitee]++;
             assigneeCounter[assignee]++;
         }
     });
 
-    // Ensure all assignees are included in at least 10 pairs
-    const remainingAssignees = Object.keys(assigneeCounter).filter(assignee => assigneeCounter[assignee] < 10);
+    // Second pass: Ensure every assignee has at least 10 invitees
+    const remainingAssignees = Object.keys(assigneeCounter).filter(
+        assignee => assigneeCounter[assignee] < 10
+    );
 
     remainingAssignees.forEach(assignee => {
-        // Find rows with this assignee
         const potentialRows = rows.filter(([_, a]) => a === assignee);
 
         while (assigneeCounter[assignee] < 10 && potentialRows.length > 0) {
@@ -202,6 +202,7 @@ document.getElementById('hide-instructions').style.display='none';
 
     return filteredRows;
 }
+
 
 </script>
 
