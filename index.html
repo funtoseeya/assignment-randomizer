@@ -37,26 +37,26 @@
             margin-bottom: 0.5rem;
             border-radius: 0.5rem;
         }
+
         @media (max-width: 1000px) {
             #content {
                 width: 75%;
             }
         }
-        </style>
+    </style>
 </head>
 
 <body>
     <div id="content">
         <a id="reset" style="float:right;text-decoration: none;" href=""> ↻ Restart</a>
-        <a id="show-instructions" style="float:left;text-decoration: none;" href="#" >Show instructions</a>
-        <a id="hide-instructions" style="float:left;text-decoration: none;display:none" href="#" >Hide instructions</a>
+        <a id="show-instructions" style="float:left;text-decoration: none;" href="#">Show instructions</a>
+        <a id="hide-instructions" style="float:left;text-decoration: none;display:none" href="#">Hide instructions</a>
 
 
         <h1>Assignment Randomizer</h1>
 
-    
         <div id="instructions" style="display: none;">
-           <h2>Instructions</h2>
+            <h2>Instructions</h2>
             <ol>
                 <li>Upload a CSV file with two columns:</li>
                 <ul>
@@ -67,22 +67,17 @@
                         each association as a new row, paired with the person's unique identifier in Column 1. This
                         format captures "one-to-many" relationships, where each person may be linked to multiple
                         associations.</li>
-
                 </ul>
                 <li>The file will then be read. If everything is copacetic, a Process button will appear it.</li>
                 <li>Click the Process button. At this point, the program will create a randomized shortlist of assignments, 
-                    with a goal to <strong>give each invitee at most 3 assignees and each assignee at least 3 invitees. (this is hardcoded)</strong> </li>
-                    <li>A CSV will be generated for you to download. If you wish to see the exact amount of associations each invitee and assignee have been given, you can generate pivot tables that give those insights.</li>
+                    with a goal to <strong>give each invitee at most 3 assignees and each assignee at least 3 invitees. (this is hardcoded)</strong></li>
+                <li>A CSV will be generated for you to download. If you wish to see the exact amount of associations each invitee and assignee have been given, you can generate pivot tables that give those insights.</li>
             </ol>
-
-
-
         </div>
         <input type="file" id="fileInput" accept=".csv">
         <button id="processBtn" style="display: none;">Process File</button>
         <p id="please-wait" style="display: none; font-weight: bold;color:red;">Please wait...</p>
         <a id="download" href="" download="randomized_output.csv">Download Processed CSV</a>
-
 
     </div>
 </body>
@@ -90,120 +85,127 @@
     document.getElementById('fileInput').addEventListener('change', handleFile);
     document.getElementById('processBtn').addEventListener('click', processFile);
     document.getElementById('reset').addEventListener('click', reload);
-    document.getElementById('show-instructions').addEventListener('click', function(){
+    document.getElementById('show-instructions').addEventListener('click', function () {
+        document.getElementById('instructions').style.display = 'block';
+        document.getElementById('show-instructions').style.display = 'none';
+        document.getElementById('hide-instructions').style.display = 'inline';
+    });
 
-        document.getElementById('instructions').style.display='block';
-        document.getElementById('show-instructions').style.display='none';
-        document.getElementById('hide-instructions').style.display='inline';
-
-    })
-
-    document.getElementById('hide-instructions').addEventListener('click', function(){
-
-document.getElementById('instructions').style.display='none';
-document.getElementById('show-instructions').style.display='inline-block';
-document.getElementById('hide-instructions').style.display='none';
-
-})
+    document.getElementById('hide-instructions').addEventListener('click', function () {
+        document.getElementById('instructions').style.display = 'none';
+        document.getElementById('show-instructions').style.display = 'inline-block';
+        document.getElementById('hide-instructions').style.display = 'none';
+    });
 
     let csvData = [];
+    let students = new Map(); // Map of StudentID -> [TeacherIDs]
+    let teachers = new Map(); // Map of TeacherID -> [StudentIDs]
 
     function reload() {
         window.location.reload();
     }
 
     function handleFile(event) {
-        document.getElementById('download').style.display='none';
         const file = event.target.files[0];
-        if (!file || !file.name.endsWith('.csv')) {
-            alert('Please upload a valid CSV file.');
-            return;
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                csvData = parseCSV(e.target.result);
+                buildMappings(csvData);
+                document.getElementById('processBtn').style.display = 'inline-block';
+            };
+            reader.readAsText(file);
         }
-
-        const reader = new FileReader();
-        reader.onload = function (e) {
-            document.getElementById('please-wait').style.display = 'inline';
-            document.getElementById('reset').style.display = 'inline';
-
-            const content = e.target.result;
-            csvData = parseCSV(content);
-        };
-        reader.readAsText(file);
-
-
-        reader.onloadend = () => {
-            console.log("DONE", reader.readyState); // readyState will be 2
-            document.getElementById('please-wait').style.display = 'none';
-
-            document.getElementById('processBtn').style.display = 'inline';
-
-        };
     }
 
     function parseCSV(content) {
-        const rows = content.split('\n') //take content and split it into rows each time you see a line break
-            .map(row => row.split(',') //split each row further into cells each time you see a comma 
-                .map(cell => cell.trim())); // for each cell, trim out any case of spaces before or after the content.
-        return rows.filter(row => row.length = 2); // return only the rows that have 2 columns
+        const rows = content.trim().split('\n').map(row => row.split(','));
+        return rows.slice(1).map(([student, teacher]) => ({ student, teacher }));
+    }
+
+    function buildMappings(data) {
+        data.forEach(({ student, teacher }) => {
+            if (!students.has(student)) students.set(student, []);
+            students.get(student).push(teacher);
+
+            if (!teachers.has(teacher)) teachers.set(teacher, []);
+            teachers.get(teacher).push(student);
+        });
     }
 
     function processFile() {
-        document.getElementById('processBtn').style.display='none'
-        const [header, ...rows] = csvData;
-        const results = randomizeAssociations(rows);
+        document.getElementById('please-wait').style.display = 'block';
 
-        const output = [header.join(','), ...results.map(row => row.join(','))].join('\n');
-        const blob = new Blob([output], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
+        const randomizedData = randomizeAssociations();
+        const csvContent = generateCSV(randomizedData);
 
-        const downloadLink = document.getElementById('download');
-        downloadLink.href = url;
-        downloadLink.style.display = 'block';
+        downloadCSV(csvContent);
+        document.getElementById('please-wait').style.display = 'none';
     }
 
-    function randomizeAssociations(rows) {
-    const inviteeCounter = {};
-    const assigneeCounter = {};
+    function randomizeAssociations() {
+        const results = [];
+        const remainingTeachers = new Map(teachers); // Copy to adjust dynamically
 
-    const shuffledRows = rows.sort(() => Math.random() - 0.5); // Shuffle rows randomly
-    const filteredRows = [];
-
-    // First pass: Assign up to 3 assignees per invitee and ensure assignees don't exceed 20 invitees
-    shuffledRows.forEach(([invitee, assignee]) => {
-        if (!inviteeCounter[invitee]) inviteeCounter[invitee] = 0;
-        if (!assigneeCounter[assignee]) assigneeCounter[assignee] = 0;
-
-        if (inviteeCounter[invitee] < 3 && assigneeCounter[assignee] < 20) {
-            filteredRows.push([invitee, assignee]);
-            inviteeCounter[invitee]++;
-            assigneeCounter[assignee]++;
-        }
-    });
-
-    // Second pass: Ensure every assignee has at least 10 invitees
-    const remainingAssignees = Object.keys(assigneeCounter).filter(
-        assignee => assigneeCounter[assignee] < 10
-    );
-
-    remainingAssignees.forEach(assignee => {
-        const potentialRows = rows.filter(([_, a]) => a === assignee);
-
-        while (assigneeCounter[assignee] < 10 && potentialRows.length > 0) {
-            const [invitee, a] = potentialRows.shift();
-
-            // Ensure the invitee meets the <3 constraint
-            if (inviteeCounter[invitee] < 3) {
-                filteredRows.push([invitee, a]);
-                inviteeCounter[invitee]++;
-                assigneeCounter[a]++;
+        // Handle teachers with fewer than 10 students
+        for (const [teacher, assignedStudents] of teachers.entries()) {
+            if (assignedStudents.length < 10) {
+                assignedStudents.forEach(student => {
+                    results.push({ student, teacher });
+                });
+                remainingTeachers.delete(teacher);
+                assignedStudents.forEach(student => {
+                    students.get(student).splice(students.get(student).indexOf(teacher), 1);
+                });
             }
         }
-    });
 
-    return filteredRows;
+        // Randomize for other students and teachers
+        for (const [student, studentTeachers] of students.entries()) {
+    if (studentTeachers.length > 0) {
+        const selectedTeachers = shuffleArray(studentTeachers).slice(0, 3); // Attempt to select up to 3 teachers
+        selectedTeachers.forEach(teacher => {
+            // Check if the student already has 3 assignments
+            if (results.filter(r => r.student === student).length < 3) {
+                results.push({ student, teacher });
+
+                // Update remaining teachers' student lists
+                if (!remainingTeachers.has(teacher)) return;
+                const teacherStudents = remainingTeachers.get(teacher);
+                teacherStudents.push(student);
+
+                // Remove teacher from the pool once their quota is met
+                if (teacherStudents.length >= 10) remainingTeachers.delete(teacher);
+            }
+        });
+    }
 }
 
 
+        return results;
+    }
+
+    function generateCSV(data) {
+        const header = 'StudentID,TeacherID\n';
+        const rows = data.map(({ student, teacher }) => `${student},${teacher}`);
+        return header + rows.join('\n');
+    }
+
+    function downloadCSV(content) {
+        const blob = new Blob([content], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.getElementById('download');
+        link.href = url;
+        link.style.display = 'block';
+    }
+
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
 </script>
 
 </html>
