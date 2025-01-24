@@ -61,7 +61,8 @@
                 <li>Upload a CSV file with two columns:</li>
                 <ul>
                     <li><strong>Column 1 (Invitees):</strong> Unique identifiers for the people you want to invite.</li>
-                    <li><strong>Column 2 (Assignees):</strong> Unique identifiers for their potential associations (e.g. teachers,
+                    <li><strong>Column 2 (Assignees):</strong> Unique identifiers for their potential associations (e.g.
+                        teachers,
                         courses, colleagues).</li>
                     <li><strong>Relationships:</strong> Each person in Column 1 can have one or more associations. List
                         each association as a new row, paired with the person's unique identifier in Column 1. This
@@ -69,9 +70,13 @@
                         associations.</li>
                 </ul>
                 <li>The file will then be read. If everything is copacetic, a Process button will appear it.</li>
-                <li>Click the Process button. At this point, the program will create a randomized shortlist of assignments, 
-                    with a goal to <strong>give each invitee at most 3 assignees and each assignee at least 3 invitees. (this is hardcoded)</strong></li>
-                <li>A CSV will be generated for you to download. If you wish to see the exact amount of associations each invitee and assignee have been given, you can generate pivot tables that give those insights.</li>
+                <li>Click the Process button. At this point, the program will create a randomized shortlist of
+                    assignments,
+                    with a goal to <strong>give each invitee at most 3 assignees and each assignee at least 3 invitees.
+                        (this is hardcoded)</strong></li>
+                <li>A CSV will be generated for you to download. If you wish to see the exact amount of associations
+                    each invitee and assignee have been given, you can generate pivot tables that give those insights.
+                </li>
             </ol>
         </div>
         <input type="file" id="fileInput" accept=".csv">
@@ -142,48 +147,93 @@
         downloadCSV(csvContent);
         document.getElementById('please-wait').style.display = 'none';
     }
-
     function randomizeAssociations() {
-        const results = [];
-        const remainingTeachers = new Map(teachers); // Copy to adjust dynamically
+    const results = [];
+    const remainingTeachers = new Map(teachers); // Copy to adjust dynamically
 
-        // Handle teachers with fewer than 10 students
-        for (const [teacher, assignedStudents] of teachers.entries()) {
-            if (assignedStudents.length < 10) {
-                assignedStudents.forEach(student => {
+    // Step 1: Pre-sort teachers and students by their number of options
+    const sortedTeachers = Array.from(teachers.entries()).sort((a, b) => a[1].length - b[1].length); // Teachers with fewer students first
+    const sortedStudents = Array.from(students.entries()).sort((a, b) => a[1].length - b[1].length); // Students with fewer teachers first
+
+    // Step 2: Assign students to their most at-risk teachers
+    for (const [teacher, assignedStudents] of sortedTeachers) {
+        if (assignedStudents.length < 10) {
+            assignedStudents.forEach(student => {
+                results.push({ student, teacher });
+            });
+            remainingTeachers.delete(teacher);
+            assignedStudents.forEach(student => {
+                students.get(student).splice(students.get(student).indexOf(teacher), 1);
+            });
+        }
+    }
+
+    // Step 3: Randomize associations for other students and teachers, prioritizing sorted students
+    for (const [student, studentTeachers] of sortedStudents) {
+        if (studentTeachers.length > 0) {
+            const prioritizedTeachers = studentTeachers
+                .filter(teacher => remainingTeachers.has(teacher))
+                .sort((a, b) => remainingTeachers.get(a).length - remainingTeachers.get(b).length); // Teachers with fewer options first
+
+            prioritizedTeachers.forEach(teacher => {
+                // Check if the teacher already has 50 or more students assigned
+                const teacherAssignments = results.filter(r => r.teacher === teacher).length;
+                if (teacherAssignments < 50 && results.filter(r => r.student === student).length < 3) {
                     results.push({ student, teacher });
-                });
-                remainingTeachers.delete(teacher);
-                assignedStudents.forEach(student => {
-                    students.get(student).splice(students.get(student).indexOf(teacher), 1);
-                });
+
+                    // Update remaining teachers' student lists
+                    if (!remainingTeachers.has(teacher)) return;
+                    const teacherStudents = remainingTeachers.get(teacher);
+                    teacherStudents.push(student);
+                }
+            });
+        }
+    }
+
+    // Step 4: Final pass to enforce teacher minimums (targeting at least 10 but allowing more)
+    for (const [teacher, assignedStudents] of remainingTeachers.entries()) {
+        while (assignedStudents.length < 10) {
+            // Find a student who still has fewer than 3 assignments
+            const student = Array.from(students.keys()).find(
+                s =>
+                    results.filter(r => r.student === s).length < 3 &&
+                    students.get(s).includes(teacher) // Ensure valid teacher-student match
+            );
+            if (!student) break; // No more students available to assign
+
+            results.push({ student, teacher });
+            assignedStudents.push(student);
+        }
+    }
+
+    // Step 5: Assign remaining students with fewer than 3 associations to more teachers
+    for (const [student, studentTeachers] of students.entries()) {
+        const currentAssociations = results.filter(r => r.student === student).length;
+
+        if (currentAssociations < 3) {
+            const potentialTeachers = studentTeachers.filter(teacher =>
+                remainingTeachers.has(teacher) &&
+                !results.some(r => r.student === student && r.teacher === teacher) // Ensure no duplicate associations
+            );
+
+            for (const teacher of potentialTeachers) {
+                if (results.filter(r => r.student === student).length < 3) {
+                    results.push({ student, teacher });
+
+                    // Update the teacher's list of students
+                    if (remainingTeachers.has(teacher)) {
+                        remainingTeachers.get(teacher).push(student);
+                    }
+                } else {
+                    break; // Stop once the student reaches 3 associations
+                }
             }
         }
-
-        // Randomize for other students and teachers
-        for (const [student, studentTeachers] of students.entries()) {
-    if (studentTeachers.length > 0) {
-        const selectedTeachers = shuffleArray(studentTeachers).slice(0, 3); // Attempt to select up to 3 teachers
-        selectedTeachers.forEach(teacher => {
-            // Check if the student already has 3 assignments
-            if (results.filter(r => r.student === student).length < 3) {
-                results.push({ student, teacher });
-
-                // Update remaining teachers' student lists
-                if (!remainingTeachers.has(teacher)) return;
-                const teacherStudents = remainingTeachers.get(teacher);
-                teacherStudents.push(student);
-
-                // Remove teacher from the pool once their quota is met
-                if (teacherStudents.length >= 10) remainingTeachers.delete(teacher);
-            }
-        });
     }
+
+    return results;
 }
 
-
-        return results;
-    }
 
     function generateCSV(data) {
         const header = 'StudentID,TeacherID\n';
